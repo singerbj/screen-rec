@@ -6,9 +6,17 @@
 // process.
 // start cappin
 const fs = require('fs');
-const { desktopCapturer } = require('electron')
+const { desktopCapturer } = require('electron');
+const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
+const ffprobePath = require('@ffprobe-installer/ffprobe').path;
+const ffmpeg = require('fluent-ffmpeg');
+ffmpeg.setFfmpegPath(ffmpegPath);
+ffmpeg.setFfprobePath(ffprobePath);
+
+console.log(ffmpegPath);
+
 const videoWidth = 1280;
-const videoWHeight = 720;
+const videoHeight = 720;
 
 const tmpDir = ".tmp";
 if (!fs.existsSync(tmpDir)){
@@ -29,8 +37,8 @@ desktopCapturer.getSources({
                             chromeMediaSourceId: source.id,
                             minWidth: videoWidth,
                             maxWidth: videoWidth,
-                            minHeight: videoWHeight,
-                            maxHeight: videoWHeight
+                            minHeight: videoHeight,
+                            maxHeight: videoHeight,
                         }
                     }
                 })
@@ -38,22 +46,21 @@ desktopCapturer.getSources({
             } catch (e) {
                 handleError(e)
             }
-            console.log('return');
             return
     }
 })
 
 function handleStream(stream) {
-    console.log('handleStream');
-    // const video = document.querySelector('video');
-    // video.srcObject = stream;
-    // video.onloadedmetadata = (e) => video.play();
+    console.log('handle')
+    const video = document.querySelector('video');
+    video.srcObject = stream;
+    video.onloadedmetadata = (e) => video.play();
     videoStream = stream;
 }
 
 function handleError(e) {
-    console.log('handleError');
-    console.log(e)
+    console.log(e, e.stack)
+    console.trace();
 }
 
 function wait(delayInMS) {
@@ -69,7 +76,7 @@ function startRecording() {
 
     recorder.ondataavailable = event => data.push(event.data);
     recorder.start();
-    console.log(recorder.state + " for " + (lengthInMS / 1000) + " seconds...");
+    // console.log(recorder.state + " for " + (lengthInMS / 1000) + " seconds...");
 
     let stopped = new Promise((resolve, reject) => {
         recorder.onstop = resolve;
@@ -79,7 +86,6 @@ function startRecording() {
     });
 
     let recorded = wait(lengthInMS).then(() => {
-        console.log('stopping recording');
         if(recorder.state == "recording"){
             recorder.stop()
             startRecording();
@@ -91,67 +97,55 @@ function startRecording() {
         if(blobs.length > 15){
             blobs.shift();
         }
-        console.log(blobs);
     });
 }
 
-function saveBase64Array(base64Array){
-    const fileStream = fs.createWriteStream(tmpDir + "/" + Date.now() + ".webm", { flags: 'a' });
-    // base64Array.forEach((base64Data, i) => {
-    //     const dataBuffer = new Buffer(base64Data, 'base64');
-    //     fileStream.write(dataBuffer);
-    // });
-
-    const dataBuffer = new Buffer(base64Array.join(''), 'base64');
-    fileStream.write(dataBuffer);
-
-    // var reader = new FileReader()
-    // reader.onload = function(){
-    //     var buffer = new Buffer(reader.result);
-    //     console.log('6666666666666666666result', reader.result);
-    //     fs.writeFile(tmpDir + "/" + Date.now() + ".webm", buffer, {}, (err, res) => {
-    //         if(err){
-    //             console.error(err)
-    //             return
-    //         }
-    //         console.log('video saved')
-    //     });
-    // }
-    // reader.readAsArrayBuffer(blob)
-}
-
-function getBase64(blob, index){
+function saveBlob(timestamp, blob, index){
     return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.addEventListener('load', () => {
-            const dataUrl = reader.result;
-            const base64EncodedData = dataUrl.split(',')[1];
-            resolve(base64EncodedData);
-        });
-        reader.readAsDataURL(blob);
+        let reader = new FileReader();
+        reader.onload = function(){
+            let buffer = new Buffer(reader.result);
+            let filename = tmpDir + "/" + timestamp + "_" + index + ".webm";
+            fs.writeFile(filename, buffer, {}, (err, res) => {
+                if(err){
+                    console.error(err);
+                    reject(err);
+                } else {
+                    console.log('video saved');
+                    resolve(filename);
+                }
+            });
+        }
+        reader.readAsArrayBuffer(blob);
     });
 }
 
 let save = async function () {
     const blobsCopy = [...blobs];
-    // const webm = blobsCopy.reduce((a, b)=> new Blob([a, b], { type: "video/webm" }));
-    // saveBlob(webm, 0);
+    let timestamp = Date.now();
+    let outputName = tmpDir + "/" + timestamp + ".webm";
     let promises = [];
     blobsCopy.forEach((webm, index) => {
         console.log("=================", webm);
-        // var blobUrl = URL.createObjectURL(webm);
-        // window.open(blobUrl);
-        promises.push(getBase64(webm, index));
+        promises.push(saveBlob(timestamp, webm, index));
     });
-    var base64Array = await Promise.all(promises);
-    saveBase64Array(base64Array);
+    var filenames = await Promise.all(promises);
 
-
-    // const { BrowserWindow } = require('electron').remote;
-    // const saveFile = BrowserWindow.require('electron-save-file');
-    // saveFile(blobUrl) // should begins with 'http' or 'file://' or '/'
-    //   .then(() => console.log('saved'))
-    //   .catch(err => console.error(err.stack));
+    let cmdStart;
+    filenames.forEach((filename, i) => {
+        if(i === 0){
+            cmdStart = ffmpeg(filename);
+        } else {
+            cmdStart.input(filename);
+        }
+    });
+    cmdStart.on('error', function(err) {
+        console.log('An error occurred: ' + err.message);
+    }).on('progress', function(a,b,c) {
+        console.log('Progress', a, b, c);
+    }).on('end', function() {
+        console.log('Merging finished!');
+    }).mergeToFile(outputName, tmpDir);
 }
 
 const recordButton = document.querySelector('#record');
