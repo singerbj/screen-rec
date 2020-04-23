@@ -5,18 +5,21 @@
 // selectively enable features needed in the rendering
 // process.
 // start cappin
+const fs = require('fs');
 const { desktopCapturer } = require('electron')
 const videoWidth = 1280;
 const videoWHeight = 720;
 
-console.log('1');
+const tmpDir = ".tmp";
+if (!fs.existsSync(tmpDir)){
+    fs.mkdirSync(tmpDir);
+}
+
 desktopCapturer.getSources({
     types: ['window', 'screen']
 }).then(async sources => {
-    console.log('2');
     for (const source of sources) {
         console.log(source);
-        // if (source.name === 'Electron') {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({
                     audio: false,
@@ -37,15 +40,14 @@ desktopCapturer.getSources({
             }
             console.log('return');
             return
-        // }
     }
 })
 
 function handleStream(stream) {
     console.log('handleStream');
-    const video = document.querySelector('video');
-    video.srcObject = stream;
-    video.onloadedmetadata = (e) => video.play();
+    // const video = document.querySelector('video');
+    // video.srcObject = stream;
+    // video.onloadedmetadata = (e) => video.play();
     videoStream = stream;
 }
 
@@ -55,7 +57,7 @@ function handleError(e) {
 }
 
 function wait(delayInMS) {
-  return new Promise(resolve => setTimeout(resolve, delayInMS));
+    return new Promise(resolve => setTimeout(resolve, delayInMS));
 }
 
 let blobs = [];
@@ -77,13 +79,15 @@ function startRecording() {
     });
 
     let recorded = wait(lengthInMS).then(() => {
-        console.log('stopping crcording');
-        recorder.state == "recording" && recorder.stop();
-        startRecording();
+        console.log('stopping recording');
+        if(recorder.state == "recording"){
+            recorder.stop()
+            startRecording();
+        }
     });
 
     return Promise.all([ stopped, recorded ]).then(() => {
-        blobs.push(data);
+        blobs.push(data[0]);
         if(blobs.length > 15){
             blobs.shift();
         }
@@ -91,17 +95,63 @@ function startRecording() {
     });
 }
 
-function save() {
-    const webm = blobs.reduce((a, b)=> new Blob([a, b], { type: "video/webm" }));
-    console.log(webm);
-    var blobUrl = URL.createObjectURL(webm);
-    // window.location.replace(blobUrl);
+function saveBase64Array(base64Array){
+    const fileStream = fs.createWriteStream(tmpDir + "/" + Date.now() + ".webm", { flags: 'a' });
+    // base64Array.forEach((base64Data, i) => {
+    //     const dataBuffer = new Buffer(base64Data, 'base64');
+    //     fileStream.write(dataBuffer);
+    // });
 
-    const { BrowserWindow } = require('electron').remote;
-    const saveFile = BrowserWindow.require('electron-save-file');
-    saveFile(blobUrl) // should begins with 'http' or 'file://' or '/'
-      .then(() => console.log('saved'))
-      .catch(err => console.error(err.stack));
+    const dataBuffer = new Buffer(base64Array.join(''), 'base64');
+    fileStream.write(dataBuffer);
+
+    // var reader = new FileReader()
+    // reader.onload = function(){
+    //     var buffer = new Buffer(reader.result);
+    //     console.log('6666666666666666666result', reader.result);
+    //     fs.writeFile(tmpDir + "/" + Date.now() + ".webm", buffer, {}, (err, res) => {
+    //         if(err){
+    //             console.error(err)
+    //             return
+    //         }
+    //         console.log('video saved')
+    //     });
+    // }
+    // reader.readAsArrayBuffer(blob)
+}
+
+function getBase64(blob, index){
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.addEventListener('load', () => {
+            const dataUrl = reader.result;
+            const base64EncodedData = dataUrl.split(',')[1];
+            resolve(base64EncodedData);
+        });
+        reader.readAsDataURL(blob);
+    });
+}
+
+let save = async function () {
+    const blobsCopy = [...blobs];
+    // const webm = blobsCopy.reduce((a, b)=> new Blob([a, b], { type: "video/webm" }));
+    // saveBlob(webm, 0);
+    let promises = [];
+    blobsCopy.forEach((webm, index) => {
+        console.log("=================", webm);
+        // var blobUrl = URL.createObjectURL(webm);
+        // window.open(blobUrl);
+        promises.push(getBase64(webm, index));
+    });
+    var base64Array = await Promise.all(promises);
+    saveBase64Array(base64Array);
+
+
+    // const { BrowserWindow } = require('electron').remote;
+    // const saveFile = BrowserWindow.require('electron-save-file');
+    // saveFile(blobUrl) // should begins with 'http' or 'file://' or '/'
+    //   .then(() => console.log('saved'))
+    //   .catch(err => console.error(err.stack));
 }
 
 const recordButton = document.querySelector('#record');

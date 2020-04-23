@@ -85,6 +85,11 @@ concat-stream@^1.6.2:
     readable-stream "^2.2.2"
     typedarray "^0.0.6"
 
+concatenateblobs@^1.0.2:
+  version "1.0.2"
+  resolved "https://registry.yarnpkg.com/concatenateblobs/-/concatenateblobs-1.0.2.tgz#7a832910c911703fde869bed8291e0899c5f0532"
+  integrity sha1-eoMpEMkRcD/ehpvtgpHgiZxfBTI=
+
 config-chain@^1.1.11:
   version "1.1.12"
   resolved "https://registry.yarnpkg.com/config-chain/-/config-chain-1.1.12.tgz#0fde8d091200eb5e808caf25fe618c02f48e4efa"

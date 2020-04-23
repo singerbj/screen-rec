@@ -20,6 +20,7 @@
     "electron": "^8.2.3"
   },
   "dependencies": {
+    "concatenateblobs": "^1.0.2",
     "electron-save-file": "^1.0.2"
   }
 }
